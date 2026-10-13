@@ -29,10 +29,10 @@
 Country B is trying to reach a nuclear breakout goal by doing research with materiel held at
 ten facilities. Country A tries to stop it. Each round $t = 1, \dots, T$ proceeds as follows.
 \begin{enumerate}
-  \item Country A forms a mixed strategy over its pure actions (Section~\ref{sec:A}).
-  \item Country B, knowing A's mixed strategy but not which action A will draw, solves a linear
+  \item Country A chooses its best action, breaking any ties at random (Section~\ref{sec:A}).
+  \item Country B, knowing A's strategy but not how A breaks ties, solves a linear
         program to decide how to use and move its materiel (Section~\ref{sec:B}).
-  \item A's action is drawn from its mixed strategy and applied to B's plan, and the state
+  \item A's action is applied to B's plan, and the state
         updates (Section~\ref{sec:transition}).
 \end{enumerate}
 B breaks out if its cumulative progress reaches the goal $G$ by the end of round $T$.
@@ -83,7 +83,6 @@ c & Transport cost per unit shipped [0.10]. \\
 \gamma_0 & Caution: how many times as likely B treats A's threats when on schedule [1.0]. \\
 \theta & Comfort threshold [0.5]. \\
 \phi & A's intel confidence [0.2]. \\
-\tau & A's randomness (logit temperature) [0.25]. \\
 \bottomrule
 \end{tabularx}
 \end{center}
@@ -104,7 +103,7 @@ M = \sum_{i \in \I} m_i & B's total stock. Known to A from public bookkeeping: i
 \end{tabularx}
 \end{center}
 
-\section{Country A: entropy-regularized expected-value maximization}
+\section{Country A: choosing its best action}
 \label{sec:A}
 
 \paragraph{Belief.}
@@ -126,30 +125,66 @@ blockade's haul is certain and is not discounted:
   V\big(\strike(j)\big) = \phi \, \hat m_j, \qquad
   V(\blockade) = |\Ports| \, I_p .
 \end{equation}
-Let $V^* = \max_{a \in \Acts} V(a)$ denote the value of the best action.
+\paragraph{Decision variables.}
+A chooses one pure action. The binary variables below describe which one.
 
-\paragraph{Decision variable.}
-A chooses a probability distribution $P \in \Delta(\Acts)$ over its pure actions, where
-$\Delta(\Acts)$ is the set of probability distributions over $\Acts$.
+\begin{center}
+\begin{tabularx}{\textwidth}{>{$}l<{$} X}
+\toprule
+\text{Variable} & Meaning \\
+\midrule
+y_I,\ y_S,\ y_B \in \{0,1\} & A inspects, strikes or blockades this round. \\
+z_i \in \{0,1\} & Facility $i$ is inspected. \\
+w_i \in \{0,1\} & Facility $i$ is struck. \\
+\bottomrule
+\end{tabularx}
+\end{center}
 
 \paragraph{Problem.}
-A maximizes expected value plus an entropy bonus, which keeps its play unpredictable:
+A maximizes the value of its action:
+\begin{align}
+  \max_{y,\, z,\, w} \quad
+    & \phi \, \delta_s \sum_{i \in \I} \hat m_i \, z_i
+      \;+\; \phi \sum_{i \in \I} \hat m_i \, w_i
+      \;+\; |\Ports| \, I_p \, y_B
+    \label{eq:A-obj} \\
+  \text{s.t.} \quad
+    & y_I + y_S + y_B = 1
+    && \text{(exactly one kind of action)} \label{eq:A-kind} \\
+    & \sum_{i \in \I} z_i = 3 \, y_I
+    && \text{(inspect 3 facilities, or none)} \label{eq:A-insp} \\
+    & \sum_{i \in \I} w_i = y_S
+    && \text{(strike 1 facility, or none)} \label{eq:A-strike} \\
+    & y_I, y_S, y_B, z_i, w_i \in \{0, 1\}
+    && \forall i \in \I . \notag
+\end{align}
+Each feasible solution is one of A's pure actions in $\Acts$, and the objective
+\eqref{eq:A-obj} equals that action's value $V(a)$. The problem is therefore equivalent to
 \begin{equation}
-  \max_{P \in \Delta(\Acts)} \;\;
-  \sum_{a \in \Acts} P(a) \, V(a) \;-\; \tau V^* \sum_{a \in \Acts} P(a) \ln P(a) .
+  a^* \in \arg\max_{a \in \Acts} V(a) .
 \end{equation}
 
 \paragraph{Solution.}
-The unique maximizer is the logit (softmax) rule
+The optimum is found by comparing three numbers and taking the largest:
+\begin{itemize}
+  \item inspecting the three facilities with the highest $\hat m_i$, worth $\phi \, \delta_s$
+        times their total;
+  \item striking the facility with the highest $\hat m_i$, worth $\phi \, \max_i \hat m_i$;
+  \item blockading, worth $|\Ports| \, I_p$.
+\end{itemize}
+
+\paragraph{Ties.}
+When several actions tie for the best value, A picks one of them uniformly at random. Let
+$\Acts^* = \arg\max_{a \in \Acts} V(a)$ be the set of tied best actions. B knows $\Acts^*$ but
+not which action A picked, so from B's point of view A plays
 \begin{equation}
-  P^*(a) = \frac{\exp\!\big( V(a) / (\tau V^*) \big)}
-               {\sum_{a' \in \Acts} \exp\!\big( V(a') / (\tau V^*) \big)} ,
-  \qquad a \in \Acts .
+  P^*(a) = \frac{\ind[a \in \Acts^*]}{|\Acts^*|} , \qquad a \in \Acts .
 \end{equation}
-As $\tau \to 0$, A always takes the single best action.
+Ties occur, for example, in round 1, when all heat is zero and every inspection set has the same
+value. Outside ties, $P^*$ puts probability 1 on a single action.
 
 \paragraph{Risks to B.}
-A's mixed strategy gives each facility a probability of being inspected or struck, and the round
+From B's point of view, $P^*$ gives each facility a probability of being inspected or struck, and the round
 a probability of being blockaded:
 \begin{equation}
   \pi_i = \sum_{S \in \Sets : \, i \in S} P^*\big(\insp(S)\big), \qquad
@@ -295,8 +330,14 @@ Heat cools, rises with research, and resets to zero at a struck facility:
 
 \begin{enumerate}
   \item \textbf{Simultaneous moves.} A's problem uses only public information ($M$ and $h$). B's
-        program takes A's mixed strategy as data. Neither problem includes the other side's
+        program takes A's strategy $P^*$ as data. Neither problem includes the other side's
         response, so each round is a pair of one-shot best responses rather than an equilibrium.
+  \item \textbf{A is predictable.} Because A's optimum is a single action (outside ties) and B
+        knows A's strategy, B knows exactly which facilities A will inspect. B can then avoid
+        open research there and ship materiel out, so most inspections seize little. Strikes are
+        still effective because they land before convoys leave. Adding randomness to A's
+        strategy (for example an entropy term, or planning against B's best response) is left
+        for future work.
   \item \textbf{One-round lookahead for B.} The future enters B's program only through $v_t$ and
         $\kappa_t$. B's desperation comes from $w_t$, a rule applied before the solve rather than
         part of the optimization.
