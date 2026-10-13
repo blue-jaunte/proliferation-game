@@ -1,0 +1,312 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{tabularx}
+
+\newcommand{\I}{\mathcal{I}}
+\newcommand{\Nb}{\mathcal{N}}
+\newcommand{\E}{\mathcal{E}}
+\newcommand{\Ports}{\mathcal{P}}
+\newcommand{\Sets}{\mathcal{S}}
+\newcommand{\Acts}{\mathcal{A}}
+\newcommand{\ind}{\mathbb{1}}
+\newcommand{\clip}{\operatorname{clip}}
+\newcommand{\insp}{\mathrm{insp}}
+\newcommand{\strike}{\mathrm{strike}}
+\newcommand{\blockade}{\mathrm{blockade}}
+
+\title{Breakout Game: Decision Models for Countries A and B}
+\date{}
+
+\begin{document}
+\maketitle
+
+\section{Overview}
+
+Country B is trying to reach a nuclear breakout goal by doing research with materiel held at
+ten facilities. Country A tries to stop it. Each round $t = 1, \dots, T$ proceeds as follows.
+\begin{enumerate}
+  \item Country A forms a mixed strategy over its pure actions (Section~\ref{sec:A}).
+  \item Country B, knowing A's mixed strategy but not which action A will draw, solves a linear
+        program to decide how to use and move its materiel (Section~\ref{sec:B}).
+  \item A's action is drawn from its mixed strategy and applied to B's plan, and the state
+        updates (Section~\ref{sec:transition}).
+\end{enumerate}
+B breaks out if its cumulative progress reaches the goal $G$ by the end of round $T$.
+
+\section{Notation}
+
+\subsection{Sets and indices}
+
+\begin{center}
+\begin{tabularx}{\textwidth}{>{$}l<{$} X}
+\toprule
+\text{Symbol} & Definition \\
+\midrule
+\I = \{1, \dots, 10\} & Facilities, indexed by $i$ and $j$. \\
+\Nb(i) \subset \I & Facilities adjacent to $i$ on the road network. \\
+\E = \{(i,j) : j \in \Nb(i)\} & Directed transport arcs (22 in total). \\
+\Ports = \{1, 2, 3\} & Port facilities, where imports arrive. \\
+\Sets = \{S \subset \I : |S| = 3\} & Possible inspection sets (120 in total). \\
+\Acts & Country A's pure actions:
+  $\{\insp(S)\}_{S \in \Sets} \cup \{\strike(j)\}_{j \in \I} \cup \{\blockade\}$ (131 in total). \\
+t \in \{1, \dots, T\} & Round. \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\subsection{Parameters}
+
+Default values used in the simulator are given in brackets.
+
+\begin{center}
+\begin{tabularx}{\textwidth}{>{$}l<{$} X}
+\toprule
+\text{Symbol} & Definition \\
+\midrule
+T & Number of rounds [20]. \\
+G & Breakout goal: cumulative progress B needs [1000]. \\
+\bar B & Research budget: the most materiel B can put into research per round, summed over all
+  facilities [80]. \\
+I_p & Imports arriving at each port per round [5]. \\
+\alpha_o,\ \alpha_k & Progress per unit of materiel in open and covert research [1.0, 0.35]. \\
+\delta_o,\ \delta_k,\ \delta_s & Share of open, covert and idle materiel seized at an inspected
+  facility [0.85, 0.10, 0.60]. \\
+\eta & Heat from one unit of covert research, relative to one unit of open research [0.15]. \\
+\lambda & Share of heat that persists from one round to the next [0.55]. \\
+c & Transport cost per unit shipped [0.10]. \\
+\bar v & Value of one unit of leftover materiel at the start of the game [2.5]. \\
+\psi & Heat aversion: cost of one unit of heat, in units of next round's materiel value [0.05]. \\
+\gamma_0 & Caution: how many times as likely B treats A's threats when on schedule [1.0]. \\
+\theta & Comfort threshold [0.5]. \\
+\phi & A's intel confidence [0.2]. \\
+\tau & A's randomness (logit temperature) [0.25]. \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\subsection{State at the start of round $t$}
+
+\begin{center}
+\begin{tabularx}{\textwidth}{>{$}l<{$} X}
+\toprule
+\text{Symbol} & Definition \\
+\midrule
+m_i & B's materiel at facility $i$. Not observed by A. \\
+h_i & Heat signature at facility $i$. Observed by both countries. \\
+C & B's cumulative progress so far. \\
+M = \sum_{i \in \I} m_i & B's total stock. Known to A from public bookkeeping: initial stock plus
+  imports minus everything A has removed. \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\section{Country A: entropy-regularized expected-value maximization}
+\label{sec:A}
+
+\paragraph{Belief.}
+A cannot see where B's materiel is, so it apportions B's total stock by heat:
+\begin{equation}
+  \hat m_i =
+  \begin{cases}
+    M \, \dfrac{h_i}{\sum_{j \in \I} h_j} & \text{if } \sum_{j \in \I} h_j > 0, \\[8pt]
+    M / |\I| & \text{otherwise.}
+  \end{cases}
+\end{equation}
+
+\paragraph{Action values.}
+The value of an action is the materiel A expects it to remove or deny. Heat is only a hint about
+where materiel is, so inspections and strikes are discounted by the intel confidence $\phi$. A
+blockade's haul is certain and is not discounted:
+\begin{equation}
+  V\big(\insp(S)\big) = \phi \, \delta_s \sum_{i \in S} \hat m_i, \qquad
+  V\big(\strike(j)\big) = \phi \, \hat m_j, \qquad
+  V(\blockade) = |\Ports| \, I_p .
+\end{equation}
+Let $V^* = \max_{a \in \Acts} V(a)$ denote the value of the best action.
+
+\paragraph{Decision variable.}
+A chooses a probability distribution $P \in \Delta(\Acts)$ over its pure actions, where
+$\Delta(\Acts)$ is the set of probability distributions over $\Acts$.
+
+\paragraph{Problem.}
+A maximizes expected value plus an entropy bonus, which keeps its play unpredictable:
+\begin{equation}
+  \max_{P \in \Delta(\Acts)} \;\;
+  \sum_{a \in \Acts} P(a) \, V(a) \;-\; \tau V^* \sum_{a \in \Acts} P(a) \ln P(a) .
+\end{equation}
+
+\paragraph{Solution.}
+The unique maximizer is the logit (softmax) rule
+\begin{equation}
+  P^*(a) = \frac{\exp\!\big( V(a) / (\tau V^*) \big)}
+               {\sum_{a' \in \Acts} \exp\!\big( V(a') / (\tau V^*) \big)} ,
+  \qquad a \in \Acts .
+\end{equation}
+As $\tau \to 0$, A always takes the single best action.
+
+\paragraph{Risks to B.}
+A's mixed strategy gives each facility a probability of being inspected or struck, and the round
+a probability of being blockaded:
+\begin{equation}
+  \pi_i = \sum_{S \in \Sets : \, i \in S} P^*\big(\insp(S)\big), \qquad
+  a_i = P^*\big(\strike(i)\big), \qquad
+  \beta = P^*(\blockade).
+\end{equation}
+A takes exactly one action per round, so inspection, strike and blockade are mutually exclusive.
+
+\section{Country B: linear program}
+\label{sec:B}
+
+\subsection{Round-$t$ coefficients}
+
+These quantities are computed before B solves its program.
+
+\begin{center}
+\renewcommand{\arraystretch}{1.6}
+\begin{tabularx}{\textwidth}{l >{$}l<{$} X}
+\toprule
+Quantity & \text{Formula} & Meaning \\
+\midrule
+Materiel value & v_t = \bar v \, \dfrac{T - t}{T - 1}
+  & Value of a unit kept for next round. Falls to 0 at the deadline. \\
+Heat cost & \kappa_t = \psi \, v_{t+1}
+  & Cost per unit of heat B creates. \\
+Urgency & u_t = \dfrac{G - C}{(T - t + 1)\, \alpha_o \bar B}
+  & Pace B needs, as a share of its top pace (whole budget in open research). \\
+Schedule weight & w_t = \clip\!\left( \dfrac{1 - u_t}{1 - \theta}, \, 0, \, 1 \right)
+  & 1 when on schedule, 0 when desperate. \\
+Caution & \gamma_t = 1 + (\gamma_0 - 1)\, w_t
+  & How many times as likely B treats A's threats. \\
+Perceived risks & \tilde\pi_i = \min\{1, \gamma_t \pi_i\}, \;\; \tilde a_i = \min\{1, \gamma_t a_i\}
+  & A's odds as B plans against them. \\
+Survival rate & \rho_i^u = 1 - \tilde a_i - \tilde\pi_i \, \delta_u, \;\; u \in \{o, k, s\}
+  & Chance a unit used as $u$ at facility $i$ is still B's next round. \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\subsection{Decision variables}
+
+All decision variables are nonnegative.
+
+\begin{center}
+\begin{tabularx}{\textwidth}{>{$}l<{$} X}
+\toprule
+\text{Variable} & Meaning \\
+\midrule
+o_i & Materiel in open research at facility $i$. \\
+k_i & Materiel in covert research at facility $i$. \\
+s_i & Materiel left idle at facility $i$. \\
+f_{ij} & Materiel shipped from facility $i$ to facility $j$, for $(i,j) \in \E$. \\
+Q & Expected progress this round that counts toward breakout. \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\subsection{Program}
+
+\begin{align}
+\max_{o, \, k, \, s, \, f, \, Q} \quad
+  & Q
+  \;+\; v_t \sum_{i \in \I} \Big( \rho_i^o \, o_i + \rho_i^k \, k_i + \rho_i^s \, s_i \Big)
+  \notag \\
+  & \;+\; \sum_{(j,i) \in \E} \Big( v_t \big( 1 - \tilde a_j - \tilde\pi_i \, \delta_s \big) - c \Big) f_{ji}
+  \;-\; \kappa_t \sum_{i \in \I} \big( o_i + \eta \, k_i \big)
+  \label{eq:B-obj} \\[6pt]
+\text{s.t.} \quad
+  & o_i + k_i + s_i + \sum_{j \in \Nb(i)} f_{ij} = m_i
+  && \forall i \in \I
+  \label{eq:B-stock} \\
+  & \sum_{i \in \I} ( o_i + k_i ) \le \bar B
+  \label{eq:B-budget} \\
+  & Q \le \sum_{i \in \I} \Big[ ( 1 - \tilde\pi_i - \tilde a_i ) \, \alpha_o \, o_i
+        + ( 1 - \tilde a_i ) \, \alpha_k \, k_i \Big]
+  \label{eq:B-progress} \\
+  & Q \le G - C
+  \label{eq:B-goal} \\
+  & o, \, k, \, s, \, f, \, Q \ge 0 .
+  \notag
+\end{align}
+
+\paragraph{Objective \eqref{eq:B-obj}.}
+The first term is progress that counts toward the goal. The second is the expected materiel still
+B's next round, valued at $v_t$ per unit. The third covers shipments: a shipment from $j$ to $i$
+is lost if the source $j$ is struck (strikes land before convoys leave), is seized like idle stock
+if the destination $i$ is inspected, and costs $c$ per unit. The last term is the cost of the heat
+B's research creates.
+
+\paragraph{Constraints.}
+Constraint \eqref{eq:B-stock} uses every unit of stock at each facility. Constraint
+\eqref{eq:B-budget} is the research budget. Constraint \eqref{eq:B-progress} defines expected
+progress: open research is lost to an inspection or a strike, covert research only to a strike.
+Constraint \eqref{eq:B-goal} makes progress beyond the goal worthless.
+
+\section{Transition}
+\label{sec:transition}
+
+A's realized action $\hat a \sim P^*$ sets the indicators
+\begin{equation}
+  \iota_i = \ind\big[\hat a = \insp(S), \; i \in S\big], \qquad
+  \sigma_i = \ind\big[\hat a = \strike(i)\big], \qquad
+  b = \ind\big[\hat a = \blockade\big],
+\end{equation}
+which are mutually exclusive across action kinds.
+
+\paragraph{Shipments.}
+A strike lands before convoys leave, so nothing leaves a struck facility. Convoys into a struck
+facility still arrive:
+\begin{equation}
+  \mathrm{out}_i = ( 1 - \sigma_i ) \sum_{j \in \Nb(i)} f_{ij}, \qquad
+  \mathrm{in}_i = \sum_{j \in \Nb(i)} ( 1 - \sigma_j ) \, f_{ji} .
+\end{equation}
+
+\paragraph{Progress.}
+Open research at an inspected facility is intercepted, and a struck facility does no research:
+\begin{equation}
+  C' = C + \sum_{i \in \I} ( 1 - \sigma_i ) \Big[ ( 1 - \iota_i ) \, \alpha_o \, o_i + \alpha_k \, k_i \Big] .
+\end{equation}
+
+\paragraph{Losses.}
+A strike destroys the facility's whole starting stock. An inspection seizes a share of each use,
+with arrivals treated as idle stock:
+\begin{equation}
+  L_i = \sigma_i \, m_i
+  \;+\; \iota_i \Big( \delta_o \, o_i + \delta_k \, k_i + \delta_s \, ( s_i + \mathrm{in}_i ) \Big) .
+\end{equation}
+
+\paragraph{Stock.}
+Imports land after the round unless A blockaded:
+\begin{equation}
+  m_i' = \max\big\{ 0, \; m_i - \mathrm{out}_i + \mathrm{in}_i - L_i \big\}
+  \;+\; ( 1 - b ) \, I_p \, \ind[i \in \Ports] .
+\end{equation}
+
+\paragraph{Heat.}
+Heat cools, rises with research, and resets to zero at a struck facility:
+\begin{equation}
+  h_i' = ( 1 - \sigma_i ) \big( \lambda \, h_i + o_i + \eta \, k_i \big) .
+\end{equation}
+
+\section{Modeling notes}
+
+\begin{enumerate}
+  \item \textbf{Simultaneous moves.} A's problem uses only public information ($M$ and $h$). B's
+        program takes A's mixed strategy as data. Neither problem includes the other side's
+        response, so each round is a pair of one-shot best responses rather than an equilibrium.
+  \item \textbf{One-round lookahead for B.} The future enters B's program only through $v_t$ and
+        $\kappa_t$. B's desperation comes from $w_t$, a rule applied before the solve rather than
+        part of the optimization.
+  \item \textbf{Exact survival rates.} Rates such as $1 - \tilde a_i - \tilde\pi_i \delta_u$ are
+        exact because A takes only one action per round. Any rate that $\gamma_t > 1$ pushes
+        below zero is set to zero.
+  \item \textbf{Inspections can be dodged by shipping out.} Materiel shipped out of a facility in
+        the round it is inspected is not seized, unlike with strikes.
+  \item \textbf{Blockades do not enter B's program.} Imports are not B's decision and arrive after
+        the round, so $\beta$ affects only the transition.
+\end{enumerate}
+
+\end{document}
