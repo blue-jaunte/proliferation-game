@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Breakout Simulator</title>
+  <meta name="description" content="Interactive step-by-step simulation of Country B's covert materiel network under Country A inspections.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Fira+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="preload" as="image" href="media/countryB-web.webp" type="image/webp">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#map-panel">Skip to map</a>
+
+  <!-- Icon sprite (Lucide-derived strokes) -->
+  <svg width="0" height="0" class="sr-only" aria-hidden="true">
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4.5v15l12-7.5z" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="i-pause" viewBox="0 0 24 24"><rect x="6" y="4.5" width="4" height="15" rx="1" fill="currentColor" stroke="none"/><rect x="14" y="4.5" width="4" height="15" rx="1" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="i-next" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol>
+    <symbol id="i-prev" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></symbol>
+    <symbol id="i-reset" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></symbol>
+    <symbol id="i-dice" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.2" fill="currentColor"/><circle cx="15.5" cy="15.5" r="1.2" fill="currentColor"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/></symbol>
+    <symbol id="i-equal" viewBox="0 0 24 24"><path d="M5 9h14M5 15h14"/></symbol>
+    <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/><path d="M12 1v4M12 19v4M1 12h4M19 12h4"/></symbol>
+    <symbol id="i-flask" viewBox="0 0 24 24"><path d="M9 3h6M10 3v6L4.5 19a1.5 1.5 0 0 0 1.3 2.2h12.4a1.5 1.5 0 0 0 1.3-2.2L14 9V3"/><path d="M7 15h10"/></symbol>
+    <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></symbol>
+    <symbol id="i-chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></symbol>
+  </svg>
+
+  <header class="topbar">
+    <div class="brand">
+      <svg class="brand-mark" viewBox="0 0 40 40" aria-hidden="true">
+        <circle cx="13" cy="20" r="9" fill="none" stroke="currentColor" stroke-width="3.5"/>
+        <circle cx="27" cy="20" r="9" fill="none" stroke="currentColor" stroke-width="3.5"/>
+        <circle cx="13" cy="20" r="3" fill="currentColor"/>
+        <circle cx="27" cy="20" r="3" fill="var(--pink)"/>
+      </svg>
+      <div>
+        <h1>Breakout Analysis</h1>
+        <p class="brand-sub">Country B covert materiel network</p>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <span class="chip" id="solver-chip" role="status" aria-live="polite"><span class="dot"></span><span class="chip-text">Loading solver…</span></span>
+      <span class="round-pill" aria-live="polite"><span class="label">Round</span> <b id="top-round">0</b><span class="muted">/<span id="top-rounds">20</span></span></span>
+    </div>
+  </header>
+
+  <main class="layout">
+    <!-- ===================== SETUP ===================== -->
+    <aside class="panel setup" aria-labelledby="setup-title">
+      <div class="panel-head">
+        <h2 id="setup-title">Starting values</h2>
+      </div>
+
+      <form id="setup-form" novalidate>
+        <fieldset class="group">
+          <legend>Initial stockpile <span class="legend-meta" id="stock-total">200 units</span></legend>
+          <div class="stock-grid" id="stock-grid"></div>
+          <div class="seed-row">
+            <label for="p-seed" class="inline-label">Seed</label>
+            <input id="p-seed" name="seed" type="number" inputmode="numeric" step="1" value="42">
+            <button type="button" class="btn btn-ghost btn-sm" id="btn-random" title="Drop 20 blocks of 10 units onto random facilities using this seed">
+              <svg class="ic" aria-hidden="true"><use href="#i-dice"/></svg>Randomize
+            </button>
+            <button type="button" class="btn btn-ghost btn-sm" id="btn-even" title="Put 20 units in every facility">
+              <svg class="ic" aria-hidden="true"><use href="#i-equal"/></svg>Even
+            </button>
+          </div>
+        </fieldset>
+
+        <div id="param-groups"></div>
+
+        <button type="submit" class="btn btn-primary btn-block" id="btn-apply">
+          <svg class="ic" aria-hidden="true"><use href="#i-bolt"/></svg>Restart from round 0
+        </button>
+        <p class="hint">Changes apply as you make them: the game is re-run up to the round you're viewing. Each round is solved live in your browser.</p>
+      </form>
+    </aside>
+
+    <!-- ===================== MAP ===================== -->
+    <section class="panel map-panel" id="map-panel" tabindex="-1" aria-labelledby="map-title">
+      <div class="panel-head">
+        <h2 id="map-title">Distribution of covert materiel</h2>
+        <p class="panel-sub" id="round-caption">Round 0 · initial setup</p>
+      </div>
+
+      <div class="map-frame">
+        <svg id="map" viewBox="0 0 2642 1600" role="group" aria-label="Map of Country B with ten facilities">
+          <defs>
+            <marker id="arrow-teal" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="4" markerHeight="4" orient="auto-start-reverse">
+              <path d="M0 0L10 5L0 10z" fill="var(--teal)"/>
+            </marker>
+            <marker id="arrow-pink" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="4" markerHeight="4" orient="auto-start-reverse">
+              <path d="M0 0L10 5L0 10z" fill="var(--pink)"/>
+            </marker>
+            <marker id="arrow-blue" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="4" markerHeight="4" orient="auto-start-reverse">
+              <path d="M0 0L10 5L0 10z" fill="var(--blue-soft)"/>
+            </marker>
+            <radialGradient id="vignette" cx="50%" cy="50%" r="75%">
+              <stop offset="60%" stop-color="#0b0d26" stop-opacity="0"/>
+              <stop offset="100%" stop-color="#0b0d26" stop-opacity="0.55"/>
+            </radialGradient>
+            <linearGradient id="heat-grad" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stop-color="var(--amber)"/>
+              <stop offset="100%" stop-color="var(--pink)"/>
+            </linearGradient>
+          </defs>
+          <image href="media/countryB-web.webp" x="0" y="0" width="2642" height="1600" preserveAspectRatio="none"/>
+          <rect width="2642" height="1600" fill="url(#vignette)" pointer-events="none"/>
+          <g id="layer-flows"></g>
+          <g id="layer-nodes"></g>
+          <g id="layer-labels"></g>
+        </svg>
+
+        <div class="map-overlay" id="map-overlay" hidden>
+          <div class="spinner" aria-hidden="true"></div>
+          <span id="map-overlay-text">Solving round…</span>
+        </div>
+      </div>
+
+      <div class="map-legend" aria-label="Map legend">
+          <span><i class="lg lg-insp"></i>Inspected by Country A</span>
+          <span><i class="lg lg-strike"></i>Struck by Country A</span>
+          <span><i class="lg lg-flow"></i>Transport</span>
+          <span><i class="lg lg-import"></i>Import</span>
+          <span><i class="lg lg-heat"></i>Heat signature</span>
+        </div>
+      <div class="controls" role="toolbar" aria-label="Simulation playback">
+        <button class="btn btn-icon" id="btn-reset" aria-label="Back to round 0" title="Back to round 0 (Home)">
+          <svg class="ic" aria-hidden="true"><use href="#i-reset"/></svg>
+        </button>
+        <button class="btn btn-icon" id="btn-prev" aria-label="Previous round" title="Previous round (←)">
+          <svg class="ic" aria-hidden="true"><use href="#i-prev"/></svg>
+        </button>
+        <button class="btn btn-primary btn-play" id="btn-play" aria-label="Play">
+          <svg class="ic" aria-hidden="true"><use href="#i-play"/></svg><span>Play</span>
+        </button>
+        <button class="btn btn-step" id="btn-next" title="Next round (→)">
+          <span id="next-label">Step</span><svg class="ic" aria-hidden="true"><use href="#i-next"/></svg>
+        </button>
+        <div class="scrub">
+          <label for="scrubber" class="scrub-label">Round <b id="scrub-value">0</b> <span class="muted">· <span id="solved-count">0</span> solved</span></label>
+          <div class="scrub-track">
+            <div class="scrub-solved" id="scrub-solved"></div>
+            <input type="range" id="scrubber" min="0" max="20" value="0" step="1">
+          </div>
+        </div>
+        <label class="speed">
+          <span class="sr-only">Playback speed</span>
+          <select id="speed">
+            <option value="1600">0.5×</option>
+            <option value="900" selected>1×</option>
+            <option value="450">2×</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="actions-row">
+        <div class="action-card card-pink">
+          <h3><svg class="ic" aria-hidden="true"><use href="#i-target"/></svg>Country A · action</h3>
+          <div class="badges" id="insp-badges"></div>
+        </div>
+        <div class="action-card card-blue">
+          <h3><svg class="ic" aria-hidden="true"><use href="#i-flask"/></svg>Country B · actions</h3>
+          <dl class="action-list" id="b-actions"></dl>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== STATS ===================== -->
+    <aside class="panel stats" aria-labelledby="stats-title">
+      <h2 id="stats-title" class="sr-only">Round statistics</h2>
+      <div class="kpis">
+        <div class="kpi kpi-blue">
+          <span class="kpi-label">Research progress</span>
+          <span class="kpi-value" id="kpi-progress">0.0</span>
+          <span class="kpi-delta" id="kpi-progress-d">+0.0 this round</span>
+        </div>
+        <div class="kpi kpi-pink">
+          <span class="kpi-label">Seized / destroyed</span>
+          <span class="kpi-value" id="kpi-seized">0.0</span>
+          <span class="kpi-delta" id="kpi-seized-d">+0.0 this round</span>
+        </div>
+        <div class="kpi kpi-teal">
+          <span class="kpi-label">Stockpile</span>
+          <span class="kpi-value" id="kpi-stock">0</span>
+          <span class="kpi-delta" id="kpi-stock-d">at start of round</span>
+        </div>
+      </div>
+
+      <div class="donut-wrap">
+        <svg viewBox="0 0 120 120" class="donut" aria-hidden="true">
+          <circle cx="60" cy="60" r="48" class="donut-track"/>
+          <circle cx="60" cy="60" r="48" class="donut-bar" id="donut-bar" pathLength="100" stroke-dasharray="0 100"/>
+        </svg>
+        <div class="donut-center">
+          <span class="donut-value" id="donut-value">0%</span>
+        </div>
+        <div class="donut-caption">
+          <span class="kpi-label">Breakout readiness</span>
+          <span class="muted" id="donut-goal">of 2,000 progress goal</span>
+        </div>
+      </div>
+
+      <div class="subpanel">
+        <h3 class="sub-title">Stockpile ranking</h3>
+        <ol class="ranking" id="ranking"></ol>
+      </div>
+
+      <div class="subpanel" id="detail-panel">
+        <h3 class="sub-title">Facility <span id="detail-id">5</span> <span class="muted">· click a facility</span></h3>
+        <dl class="detail" id="detail"></dl>
+      </div>
+    </aside>
+
+    <!-- ===================== CHARTS + TABLE ===================== -->
+    <section class="panel bottom" aria-labelledby="bottom-title">
+      <h2 id="bottom-title" class="sr-only">Round history and breakdown</h2>
+      <div class="charts">
+        <figure class="chart">
+          <figcaption>Research added per round <span class="key"><i class="k-open"></i>Open <i class="k-covert"></i>Covert</span></figcaption>
+          <svg id="chart-progress" viewBox="0 0 520 180" role="img" aria-label="Research added per round"></svg>
+        </figure>
+        <figure class="chart">
+          <figcaption>Materiel removed per round <span class="key"><i class="k-seized"></i>Seized <i class="k-destroyed"></i>Destroyed <i class="k-blocked"></i>Blocked</span></figcaption>
+          <svg id="chart-seized" viewBox="0 0 520 180" role="img" aria-label="Materiel seized or destroyed per round"></svg>
+        </figure>
+      </div>
+      <div class="chart-tip" id="chart-tip" role="tooltip" hidden></div>
+
+      <div class="table-head">
+        <h3 class="sub-title" id="table-title">Round 0 per-facility breakdown</h3>
+      </div>
+      <div class="table-wrap">
+        <table class="breakdown">
+          <thead>
+            <tr>
+              <th scope="col">Facility</th>
+              <th scope="col" class="num">Start mat</th>
+              <th scope="col" class="num">Import</th>
+              <th scope="col" class="num">Open res</th>
+              <th scope="col" class="num">Covert res</th>
+              <th scope="col" class="num">Idle</th>
+              <th scope="col" class="num">Net transport</th>
+              <th scope="col" class="num">Heat</th>
+              <th scope="col" class="num">Est. risk</th>
+              <th scope="col">Country A</th>
+              <th scope="col" class="num">Removed</th>
+              <th scope="col" class="num">Progress</th>
+            </tr>
+          </thead>
+          <tbody id="table-body"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <div class="toast" id="toast" role="alert" hidden></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/highs@1.8.0/build/highs.js"></script>
+  <script src="js/sim.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

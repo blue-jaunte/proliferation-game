@@ -1,0 +1,8 @@
+# Local tooling
+.claude/
+
+# Full-size map source (the site uses media/countryB-web.webp)
+media/countryB.jpeg
+
+# Notebook checkpoints
+.ipynb_checkpoints/
